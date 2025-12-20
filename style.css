@@ -41,6 +41,8 @@ canvas { display: block; width: 100%; height: 100%; }
 #vignette { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: radial-gradient(circle, transparent 50%, black 100%); pointer-events: none; z-index: 11; }
 #flash-layer { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; opacity: 0; pointer-events: none; z-index: 20; transition: opacity 0.1s; }
 
+
+
 /* UI */
 #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 30; }
 
@@ -102,12 +104,37 @@ button:hover { background: var(--player-color); color: black; box-shadow: 0 0 40
 .touch-zone:active { background: rgba(255, 204, 0, 0.2); border-color: var(--player-color); transform: scale(0.95); }
 .arrow { font-size: 3rem; color: rgba(255, 255, 255, 0.5); }
 
-/* HUD */
+/* HUD UPDATES */
 #hud { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
 #hud.hidden { display: none; }
-.top-bar { display: flex; justify-content: space-between; padding: 30px; font-size: 2rem; font-weight: bold; text-shadow: 0 0 10px rgba(255,255,255,0.5); width: 100%; }
+
+/* REPLACED TOP BAR FOR CENTERING & LIVES */
+.top-bar { 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; /* Keeps everything vertically centered */
+    padding: 30px; 
+    font-size: 2rem; 
+    font-weight: bold; 
+    text-shadow: 0 0 10px rgba(255,255,255,0.5); 
+    width: 100%; 
+}
+
+/* Flexbox Magic: Score and Lives take equal side width, Phase takes center */
+.score-display, .lives-display { flex: 1; }
+.phase-display { flex: 2; text-align: center; } 
+.lives-display { text-align: right; color: var(--p1-accent); }
+
 .health-bar-container { position: absolute; bottom: 0; left: 0; width: 100%; height: 8px; background: #222; }
 #progress-fill { width: 0%; height: 100%; background: linear-gradient(90deg, var(--player-color), var(--p1-accent)); box-shadow: 0 0 20px var(--player-color); }
+
+/* MOBILE / PC SIZING ADJUSTMENT */
+@media (max-width: 800px) {
+    .top-bar { 
+        padding: 15px; 
+        font-size: 1.1rem; /* Smaller font for mobile */
+    }
+}
 
 /* ROTATION MESSAGE (Only shows on mobile portrait via CSS media query) */
 #rotate-message {
@@ -182,3 +209,5 @@ button:hover { background: var(--player-color); color: black; box-shadow: 0 0 40
     border-width: 1px;
     min-width: 80px;
 }
+
+
