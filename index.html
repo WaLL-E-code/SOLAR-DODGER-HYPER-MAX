@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#000000">
+
+    <title>SOLAR DODGER | HYPER-MAX</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div id="rotate-message">
+        <div class="warning-content">
+            <h1 class="glitch red" data-text="SYSTEM LOCK">SYSTEM LOCK</h1>
+            <div class="rotate-icon">⟳</div>
+            <p>LANDSCAPE ORIENTATION REQUIRED</p>
+        </div>
+    </div>
+
+    <div id="scanlines"></div>
+    <div id="vignette"></div>
+    <div id="chromatic-aberration"></div>
+    <div id="flash-layer"></div>
+
+    <div id="game-container">
+        
+        <canvas id="gameCanvas"></canvas>
+
+        <div id="ui-layer">
+
+            <div id="start-screen" class="screen active">
+    <div class="logo-container">
+        <h1 class="glitch" data-text="SOLAR">SOLAR</h1>
+        <h1 class="glitch sub" data-text="DODGER">DODGER</h1>
+    </div>
+    
+    <div class="info-panel">
+        <p>PHASE 1: SOLAR // PHASE 2: NEON // PHASE 3: VOID</p>
+        <p class="pc-instructions">[ A / D ] or [ ARROWS ] to Strafe</p>
+    </div>
+
+    <div class="control-selection mobile-only">
+        <p class="label">SELECT CONTROL PROTOCOL:</p>
+        <div class="control-options">
+            <button class="ctrl-btn mode-swipe selected" data-mode="swipe">SWIPE</button>
+            <button class="ctrl-btn mode-buttons" data-mode="buttons">BUTTONS</button>
+        </div>
+    </div>
+
+    <button id="start-btn">INITIALIZE SEQUENCE</button>
+</div>
+
+<div id="hud" class="hidden">
+    <div class="top-bar">
+        <div class="score-display">
+            <span class="label">TIME</span>
+            <span id="score">0.00</span>
+        </div>
+        <div class="phase-display">
+            <span id="phase-text">PHASE 1</span>
+        </div>
+    </div>
+    <div class="health-bar-container">
+        <div id="progress-fill"></div>
+    </div>
+</div>
+
+<div id="mobile-controls" class="mobile-only hidden">
+    <div id="touch-left" class="touch-zone">
+        <div class="arrow">❮</div>
+    </div>
+    <div id="touch-right" class="touch-zone">
+        <div class="arrow">❯</div>
+    </div>
+</div>
+
+<div id="game-over-screen" class="screen hidden">
+    <h1 class="glitch red" data-text="TERMINATED">TERMINATED</h1>
+    <div class="stats-box">
+        <p>SURVIVAL TIME: <span id="final-time">0.00</span>s</p>
+        <p id="rank-display">RANK: F</p>
+    </div>
+
+    <div class="control-selection mobile-only compact">
+        <p class="label">RE-CALIBRATE CONTROLS:</p>
+        <div class="control-options">
+            <button class="ctrl-btn small mode-swipe selected" data-mode="swipe">SWIPE</button>
+            <button class="ctrl-btn small mode-buttons" data-mode="buttons">BTNS</button>
+        </div>
+    </div>
+
+    <button id="restart-btn">RETRY SYSTEM</button>
+</div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,184 @@
+:root {
+    --p1-bg: #1a0b12; --p1-grid: rgba(255, 0, 85, 0.2); --p1-accent: #ff0055;
+    --player-color: #ffcc00;
+    --p2-bg: #051a1a; --p2-grid: rgba(0, 255, 234, 0.2); --p2-accent: #00ffea;
+    --p3-bg: #000000; --p3-grid: rgba(255, 255, 255, 0.1); --p3-accent: #ff0000;
+    --font-main: 'Courier New', Courier, monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+    background-color: #000; 
+    font-family: var(--font-main);
+    color: white; 
+    
+    /* THE FIX: Force the body to take exact screen size */
+    width: 100vw;
+    height: 100%;       /* Fallback */
+    height: 100dvh;     /* Modern mobile browser fix */
+    
+    overflow: hidden;   /* No scrolling allowed */
+    position: fixed;    /* Locks the view in place on iOS */
+    top: 0; left: 0; right: 0; bottom: 0;
+    touch-action: none; 
+}
+
+/* Ensure game container respects safe areas (for iPhone Notches) */
+#game-container { 
+    position: absolute; 
+    top: 0; left: 0; 
+    width: 100%; height: 100%; 
+    display: flex; justify-content: center; align-items: center; 
+    background: #000;
+}
+
+canvas { display: block; width: 100%; height: 100%; }
+
+
+/* FX LAYERS */
+#scanlines { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0) 50%, rgba(0,0,0,0.2) 50%, rgba(0,0,0,0.2)); background-size: 100% 4px; pointer-events: none; z-index: 10; }
+#vignette { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: radial-gradient(circle, transparent 50%, black 100%); pointer-events: none; z-index: 11; }
+#flash-layer { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; opacity: 0; pointer-events: none; z-index: 20; transition: opacity 0.1s; }
+
+/* UI */
+#ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 30; }
+
+.screen {
+    background: rgba(10, 5, 8, 0.95); border: 2px solid var(--p1-accent);
+    padding: 2rem; text-align: center; pointer-events: auto;
+    box-shadow: 0 0 50px var(--p1-accent); max-width: 90%;
+}
+.screen.hidden { display: none; pointer-events: none; }
+
+h1 { font-size: 2.5rem; letter-spacing: 5px; line-height: 1.1; }
+h1.sub { font-size: 3rem; }
+h1.red { color: red; text-shadow: 0 0 10px red; }
+.info-panel { margin: 20px 0; color: #aaa; font-size: 0.9rem; letter-spacing: 2px; }
+
+button {
+    background: transparent; border: 2px solid var(--player-color);
+    color: var(--player-color); padding: 15px 40px;
+    font-family: inherit; font-size: 1.5rem; font-weight: bold;
+    cursor: pointer; text-transform: uppercase; transition: 0.2s;
+    box-shadow: 0 0 10px var(--player-color); margin-top: 10px;
+}
+button:hover { background: var(--player-color); color: black; box-shadow: 0 0 40px var(--player-color); }
+
+/* --- PC VS MOBILE VISIBILITY LOGIC --- */
+
+/* 1. Default (PC): Hide mobile controls */
+.mobile-only { display: none !important; }
+.pc-instructions { display: block; }
+
+/* 2. Mobile Override (Touch Devices): Show mobile controls, Hide PC instructions */
+@media (hover: none) and (pointer: coarse) {
+    .mobile-only { display: block !important; }
+    .mobile-only.hidden { display: none !important; } /* Allow JS to hide/show within mobile */
+    .pc-instructions { display: none; }
+    
+    /* Mobile specific tweaks */
+    #mobile-controls { display: flex !important; }
+    #mobile-controls.hidden { display: none !important; }
+}
+
+/* --- MOBILE SPECIFIC STYLES --- */
+.control-selection { margin-bottom: 20px; border-top: 1px solid #333; border-bottom: 1px solid #333; padding: 15px 0; }
+.label { font-size: 0.8rem; color: var(--p2-accent); margin-bottom: 10px; }
+.control-options { display: flex; gap: 15px; justify-content: center; }
+.ctrl-btn { padding: 10px 20px; font-size: 1rem; border-color: #555; color: #777; box-shadow: none; }
+.ctrl-btn.selected { border-color: var(--p2-accent); color: var(--p2-accent); background: rgba(0, 255, 234, 0.1); box-shadow: 0 0 15px var(--p2-accent); }
+
+#mobile-controls {
+    position: absolute; bottom: 20px; left: 0; width: 100%; height: 150px;
+    justify-content: space-between; padding: 0 20px; pointer-events: none;
+}
+.touch-zone {
+    width: 120px; height: 100px; background: rgba(255, 255, 255, 0.05);
+    border: 2px solid rgba(255, 255, 255, 0.2); display: flex;
+    justify-content: center; align-items: center; pointer-events: auto;
+    border-radius: 10px; margin-top: auto; backdrop-filter: blur(2px);
+}
+.touch-zone:active { background: rgba(255, 204, 0, 0.2); border-color: var(--player-color); transform: scale(0.95); }
+.arrow { font-size: 3rem; color: rgba(255, 255, 255, 0.5); }
+
+/* HUD */
+#hud { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+#hud.hidden { display: none; }
+.top-bar { display: flex; justify-content: space-between; padding: 30px; font-size: 2rem; font-weight: bold; text-shadow: 0 0 10px rgba(255,255,255,0.5); width: 100%; }
+.health-bar-container { position: absolute; bottom: 0; left: 0; width: 100%; height: 8px; background: #222; }
+#progress-fill { width: 0%; height: 100%; background: linear-gradient(90deg, var(--player-color), var(--p1-accent)); box-shadow: 0 0 20px var(--player-color); }
+
+/* ROTATION MESSAGE (Only shows on mobile portrait via CSS media query) */
+#rotate-message {
+    display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+    background-color: #000; z-index: 10000; flex-direction: column;
+    justify-content: center; align-items: center; text-align: center;
+}
+.warning-content p { color: var(--p1-accent); font-size: 1.2rem; margin-top: 20px; animation: blink 1s infinite; }
+.rotate-icon { font-size: 5rem; color: white; margin: 20px 0; animation: rotate-anim 2s infinite; }
+
+/* Only show rotation warning on devices that are coarse pointer AND portrait */
+@media (hover: none) and (pointer: coarse) and (orientation: portrait) {
+    #rotate-message { display: flex !important; }
+}
+
+/* Glitch & Animations */
+.glitch { position: relative; color: white; }
+.glitch::before, .glitch::after { content: attr(data-text); position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+.glitch::before { left: 2px; text-shadow: -1px 0 #ff00c1; clip: rect(44px, 450px, 56px, 0); animation: glitch-anim 5s infinite linear alternate-reverse; }
+.glitch::after { left: -2px; text-shadow: -1px 0 #00fff9; clip: rect(44px, 450px, 56px, 0); animation: glitch-anim 2s infinite linear alternate-reverse; }
+@keyframes glitch-anim { 0% { clip: rect(10px, 9999px, 30px, 0); } 20% { clip: rect(80px, 9999px, 90px, 0); } 40% { clip: rect(20px, 9999px, 60px, 0); } 60% { clip: rect(50px, 9999px, 20px, 0); } 80% { clip: rect(10px, 9999px, 50px, 0); } 100% { clip: rect(90px, 9999px, 90px, 0); } }
+@keyframes rotate-anim { 0% { transform: rotate(0deg); } 50% { transform: rotate(-90deg); } 100% { transform: rotate(-90deg); } }
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+/* --- COMPACT UI FOR LANDSCAPE MOBILE --- */
+/* This ensures the start screen fits within the height of a rotated phone */
+@media (max-height: 500px) and (orientation: landscape) {
+    .screen {
+        padding: 0.5rem 2rem;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+    }
+    
+    .logo-container h1 { font-size: 1.8rem; letter-spacing: 2px; }
+    .logo-container h1.sub { font-size: 2rem; }
+    
+    .info-panel { margin: 5px 0; font-size: 0.7rem; }
+    
+    .control-selection {
+        margin: 5px 0;
+        padding: 5px 0;
+        border-width: 1px;
+    }
+    
+    button#start-btn, button#restart-btn {
+        margin-top: 5px;
+        padding: 5px 20px;
+        font-size: 1.2rem;
+    }
+
+    /* Shrink the game over title too */
+    #game-over-screen h1 { font-size: 2rem; margin-bottom: 5px; }
+    .stats-box { margin-bottom: 5px; font-size: 0.9rem; }
+}
+
+/* --- RETRY SCREEN COMPACT CONTROLS --- */
+.control-selection.compact {
+    margin: 10px 0;
+    padding: 5px 0;
+    border: none;
+}
+.control-selection.compact .label {
+    margin-bottom: 5px;
+    font-size: 0.7rem;
+}
+
+.ctrl-btn.small {
+    padding: 5px 15px;
+    font-size: 0.8rem;
+    border-width: 1px;
+    min-width: 80px;
+}
