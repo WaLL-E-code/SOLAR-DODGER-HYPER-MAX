@@ -151,7 +151,7 @@ const Game = {
     // -------------------------------------------------------------
     // CONFIGURATION
     // -------------------------------------------------------------
-    godMode: true, // FALSE = INSTANT DEATH. TRUE = SANDBOX.
+    godMode: false, // FALSE = INSTANT DEATH. TRUE = SANDBOX.
     // -------------------------------------------------------------
 
     invincibleTime: 0,
@@ -279,9 +279,14 @@ const Game = {
         if (elem.requestFullscreen && this.isMobile) elem.requestFullscreen().catch(() => { });
 
         setTimeout(() => {
+            // ... existing code ...
             this.checkMobile();
             this.resize();
             this.isRunning = true;
+
+            // --- ADD THESE 2 LINES HERE ---
+            this.lives = 3;
+            document.getElementById('lives-count').innerText = this.lives;
             this.obstacles = [];
             this.pendingSpawns = [];
             this.preWarns = [];
@@ -370,12 +375,16 @@ const Game = {
 
     queueObstacle(time, val, type) {
         this.pendingSpawns.push({ time: time, val: val, type: type });
-        // Visual warning for mobile players (ghosts)
+
         if (this.isMobile && (type === 'normal' || type === 'neon_block')) {
+            // DETERMINE COLOR BASED ON TYPE
+            const warningColor = (type === 'neon_block') ? CONFIG.COLORS.p2 : CONFIG.COLORS.p1;
+
             this.preWarns.push({
                 spawnTime: time,
                 lane: val,
-                startTime: time - 0.5
+                startTime: time - 0.5,
+                color: warningColor // <--- SAVING THE COLOR HERE
             });
         }
     },
@@ -509,23 +518,23 @@ const Game = {
         }
 
         // 3. Player Physics
-const targetPixelX = (this.player.targetX * this.width) - (this.player.w / 2);
-const currentPixelX = this.player.x * this.width;
-const newPixelX = currentPixelX + (targetPixelX - currentPixelX) * 10 * dt;
-this.player.x = newPixelX / this.width;
-this.player.tilt *= 0.9;
+        const targetPixelX = (this.player.targetX * this.width) - (this.player.w / 2);
+        const currentPixelX = this.player.x * this.width;
+        const newPixelX = currentPixelX + (targetPixelX - currentPixelX) * 10 * dt;
+        this.player.x = newPixelX / this.width;
+        this.player.tilt *= 0.9;
 
-// 🔥 RESTORE PLAYER TRAIL (VISUAL ONLY)
-if (Math.random() > 0.5) {
-    this.particles.push({
-        x: (this.player.x * this.width) + (this.player.w / 2),
-        y: this.player.y + 30,
-        vx: (Math.random() - 0.5) * 2,
-        vy: 5,
-        life: 0.5,
-        color: CONFIG.COLORS.player
-    });
-}
+        // 🔥 RESTORE PLAYER TRAIL (VISUAL ONLY)
+        if (Math.random() > 0.5) {
+            this.particles.push({
+                x: (this.player.x * this.width) + (this.player.w / 2),
+                y: this.player.y + 30,
+                vx: (Math.random() - 0.5) * 2,
+                vy: 5,
+                life: 0.5,
+                color: CONFIG.COLORS.player
+            });
+        }
 
         // 4. Obstacle Logic
         for (let i = this.obstacles.length - 1; i >= 0; i--) {
@@ -564,35 +573,48 @@ if (Math.random() > 0.5) {
         if (this.bgPulse > 1) this.bgPulse -= dt;
     },
 
+    // CHECK COLLISION (Simple Box Overlap)
     checkCollision(p, o) {
-        // Player is normalized 0-1, Obstacles are pixels. Convert Player to pixels.
-        const px = p.x * this.width;
-        const py = p.y;
-        // Hitbox reduction for fairness
-        const padding = 5;
-        return (px + padding < o.x + o.w - padding &&
-            px + p.w - padding > o.x + padding &&
-            py + padding < o.y + o.h - padding &&
-            py + p.h - padding > o.y + padding);
+        return (p.x * this.width < o.x + o.w &&
+            p.x * this.width + p.w > o.x &&
+            p.y < o.y + o.h &&
+            p.y + p.h > o.y);
     },
 
-    // -------------------------------------------------------------
-    // CRITICAL: GOD MODE vs NORMAL MODE LOGIC
-    // -------------------------------------------------------------
+    // HANDLE COLLISION (LIVES LOGIC)
     handleCollision(o, index) {
-        if (this.godMode) {
-            // GOD MODE BEHAVIOR (Sandbox/Debug)
-            if (this.invincibleTime <= 0) {
-                this.cameraShake = 20;
-                this.invincibleTime = 1.0;
-                this.createExplosion(o.x + o.w / 2, o.y + o.h / 2, o.color);
-                this.obstacles.splice(index, 1); // Destroy obstacle
-            }
+        // 1. If invincible or God Mode, ignore damage
+        if (this.invincibleTime > 0 || this.godMode) return;
+
+        // 2. Take Damage
+        this.lives--;
+        document.getElementById('lives-count').innerText = this.lives;
+
+        // 3. Visual Feedback (Screen Flash & Shake)
+        const flash = document.getElementById('flash-layer');
+        flash.style.opacity = 0.6;
+        setTimeout(() => flash.style.opacity = 0, 100);
+        this.cameraShake = 20;
+
+        // 4. Remove the object that hit us
+        this.obstacles.splice(index, 1);
+
+        // 5. Check Life Status
+        if (this.lives > 0) {
+            // SURVIVED: Grant temporary invincibility (God mode effect for 2 seconds)
+            this.invincibleTime = 2.0;
         } else {
-            // NORMAL MODE BEHAVIOR (Instant Death)
-            // No invincibility check. No second chance.
-            this.triggerGameOver();
+            // DIED: Game Over
+            this.gameOver();
         }
+    },
+
+    gameOver() {
+        this.isRunning = false;
+        AudioEngine.stop();
+        document.getElementById('hud').classList.add('hidden');
+        document.getElementById('game-over-screen').classList.remove('hidden');
+        document.getElementById('final-time').innerText = this.elapsed.toFixed(2);
     },
 
     triggerGameOver() {
@@ -675,8 +697,13 @@ if (Math.random() > 0.5) {
 
 
         // Pre-Warns (Ghosts) — only when AudioEngine has a valid audio clock
+        // Draw Mobile Ghosts (Warnings)
         this.ctx.globalAlpha = 0.15;
-        this.ctx.fillStyle = '#fff';
+        this.preWarns.forEach(w => {
+            this.ctx.fillStyle = w.color; // <--- USE THE SAVED COLOR HERE
+            this.ctx.fillRect(w.lane * laneW, 0, laneW, this.height);
+            this.ctx.fillStyle = '#fff';
+        });
         if (AudioEngine && AudioEngine.ctx) {
             const now = AudioEngine.ctx.currentTime;
             this.preWarns.forEach(w => {
