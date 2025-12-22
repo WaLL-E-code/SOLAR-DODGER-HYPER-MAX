@@ -152,6 +152,12 @@ const Game = {
     // CONFIGURATION
     // -------------------------------------------------------------
     godMode: false, // FALSE = INSTANT DEATH. TRUE = SANDBOX.
+
+    // TUNING CONSTANTS (Exposed for Phase 3 fix)
+    safetyWindowSec: 0.5,      // Lookahead window to check for blocking
+    reservationDuration: 1.0,  // How long a seeker reserves a lane
+    throttleWindow: 3.0,       // Window to check for density limits
+    maxPerWindow: 12,          // Max spawns allowed in throttleWindow for Phase 3
     // -------------------------------------------------------------
 
     invincibleTime: 0,
@@ -171,12 +177,115 @@ const Game = {
 
     obstacles: [],
     particles: [],
-    pendingSpawns: [], // Queue for objects waiting for audio time
-    preWarns: [],      // Visual ghosts for mobile
+    pendingSpawns: [],    // Queue for objects waiting for audio time
+    laneReservations: [], // NEW: Reserves lanes for sensitive spawns (Seekers)
+    preWarns: [],       // Visual ghosts for mobile
 
     cameraShake: 0,
     bgPulse: 1,
     activeColor: CONFIG.COLORS.p1,
+
+    // --- SAFETY & THROTTLING HELPERS ---
+
+    /**
+     * Checks if a specific lane is safe at a specific Audio Time.
+     * Consults pendingSpawns, active obstacles, and laneReservations.
+     */
+    isLaneSafeAtTime(lane, checkTime) {
+        // 1. Check Pending Spawns (Near Future)
+        // If something spawns within +/- safetyWindow of checkTime, it's a conflict
+        const pendingConflict = this.pendingSpawns.some(p =>
+            p.val === lane && Math.abs(p.time - checkTime) < this.safetyWindowSec
+        );
+        if (pendingConflict) return false;
+
+        // 2. Check Lane Reservations (Seekers)
+        const reservationConflict = this.laneReservations.some(r =>
+            r.lane === lane && checkTime >= r.time && checkTime < r.expire
+        );
+        if (reservationConflict) return false;
+
+        // 3. Check Active Obstacles (Current)
+        // A crude check: if an obstacle is in this lane and not passed
+        // For strict Phase 3 safety, we treat any active object in the lane as "busy"
+        const activeConflict = this.obstacles.some(o =>
+            !o.passed && o.lane === lane
+        );
+        if (activeConflict) return false;
+
+        return true;
+    },
+
+    /**
+     * Counts how many spawns are pending in the next 'windowSec' seconds.
+     */
+    getPendingCountInWindow(windowSec) {
+        const now = (AudioEngine.ctx) ? AudioEngine.ctx.currentTime : 0;
+        return this.pendingSpawns.filter(p => p.time >= now && p.time <= now + windowSec).length;
+    },
+
+    /**
+     * Helper: Ensures that within the next windowSec seconds, every lane has at least
+     * one obstacle scheduled or currently active.
+     */
+    ensureCoverage(spawnAnchor, windowSec) {
+        const beatSec = 60 / CONFIG.BPM;
+        const limitTime = spawnAnchor + windowSec;
+        const coveredLanes = new Set();
+
+        // 1. Check Pending Spawns (future)
+        this.pendingSpawns.forEach(p => {
+            if (p.time >= spawnAnchor && p.time <= limitTime) {
+                coveredLanes.add(p.val); // p.val is the lane index
+            }
+        });
+
+        // 2. Check Active Obstacles
+        this.obstacles.forEach(o => {
+            if (!o.passed && typeof o.lane === 'number') {
+                coveredLanes.add(o.lane);
+            }
+        });
+
+        // 3. Identify Missing Lanes
+        const missingLanes = [];
+        for (let i = 0; i < CONFIG.LANE_COUNT; i++) {
+            if (!coveredLanes.has(i)) missingLanes.push(i);
+        }
+
+        // 4. Safety Cap: Don't flood if there are already too many spawns
+        if (this.getPendingCountInWindow(windowSec) >= this.maxPerWindow) return;
+
+        // 5. Schedule Missing Lanes
+        missingLanes.forEach(lane => {
+            // Enhanced Safety Check before filling gap
+            if (!this.isLaneSafeAtTime(lane, spawnAnchor)) return;
+
+            const maxBeats = Math.max(1, Math.floor(windowSec / beatSec));
+            const randomBeatOffset = Math.floor(Math.random() * maxBeats) * beatSec;
+            const jitter = (Math.random() - 0.5) * beatSec * 0.2;
+
+            let targetTime = spawnAnchor + randomBeatOffset + jitter;
+            this.queueObstacle(targetTime, lane, 'normal');
+        });
+    },
+
+    /**
+     * Helper: Picks 'count' distinct random numbers from 0..LANE_COUNT-1
+     */
+    pickRandomDistinct(count) {
+        let pool = [];
+        for (let i = 0; i < CONFIG.LANE_COUNT; i++) pool.push(i);
+
+        let result = [];
+        for (let i = 0; i < count; i++) {
+            if (pool.length === 0) break;
+            const idx = Math.floor(Math.random() * pool.length);
+            result.push(pool[idx]);
+            pool.splice(idx, 1);
+        }
+        return result;
+    },
 
     init() {
         this.ctx = this.canvas.getContext('2d');
@@ -189,8 +298,8 @@ const Game = {
 
         requestAnimationFrame((t) => this.loop(t));
     },
-
     setupInputs() {
+        
         const handleInput = (dir) => {
             if (!this.isRunning || this.isPaused) return;
             const laneW = 1 / CONFIG.LANE_COUNT;
@@ -218,23 +327,28 @@ const Game = {
         }, { passive: true });
 
         // Touch Buttons
-        const bindBtn = (id, dir) => {
-            const btn = document.getElementById(id);
-            btn.addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                if (this.controlMode === 'buttons') handleInput(dir);
-            }, { passive: false });
-        };
-        bindBtn('touch-left', -1);
-        bindBtn('touch-right', 1);
+        // safe bind helper
+const safeAddEvent = (el, ev, fn, opts) => { if (el) el.addEventListener(ev, fn, opts); };
 
-        // UI Listeners
-        document.querySelectorAll('.ctrl-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => this.setControlMode(e.target.dataset.mode));
-        });
+// ... inside setupInputs()
 
-        document.getElementById('start-btn').addEventListener('click', () => this.start());
-        document.getElementById('restart-btn').addEventListener('click', () => this.start());
+safeAddEvent(document.getElementById('start-btn'), 'click', () => this.start());
+safeAddEvent(document.getElementById('restart-btn'), 'click', () => this.start());
+
+const leftBtn = document.getElementById('touch-left');
+if (leftBtn) leftBtn.addEventListener('touchstart', (e) => { e.preventDefault(); if (this.controlMode === 'buttons') handleInput(-1); }, { passive: false });
+
+const rightBtn = document.getElementById('touch-right');
+if (rightBtn) rightBtn.addEventListener('touchstart', (e) => { e.preventDefault(); if (this.controlMode === 'buttons') handleInput(1); }, { passive: false });
+
+// ctrl-btns (querySelectorAll is safe but check length)
+const ctrlBtns = document.querySelectorAll('.ctrl-btn');
+if (ctrlBtns && ctrlBtns.length) {
+  ctrlBtns.forEach(btn => {
+    btn.addEventListener('click', (e) => this.setControlMode(e.target.dataset.mode));
+  });
+}
+
     },
 
     checkMobile() {
@@ -279,16 +393,14 @@ const Game = {
         if (elem.requestFullscreen && this.isMobile) elem.requestFullscreen().catch(() => { });
 
         setTimeout(() => {
-            // ... existing code ...
             this.checkMobile();
             this.resize();
             this.isRunning = true;
-
-            // --- ADD THESE 2 LINES HERE ---
             this.lives = 3;
             document.getElementById('lives-count').innerText = this.lives;
             this.obstacles = [];
             this.pendingSpawns = [];
+            this.laneReservations = []; // Reset reservations
             this.preWarns = [];
             this.particles = [];
             this.elapsed = 0;
@@ -318,76 +430,99 @@ const Game = {
     scheduleEvent(beat, spawnTime) {
         if (!this.isRunning) return;
 
-        // PHASE 1: SOLAR (Random single lanes)
+        // --- SAFETY HELPER: Prevents "Impossible Walls" ---
+        // Enhanced: Checks pendingSpawns AND laneReservations
+        const isSafeToSpawn = (t, lane) => {
+            return this.isLaneSafeAtTime(lane, t);
+        };
+
+        // --- PHASE 1: GUARANTEED COVERAGE ---
         if (this.phase === 1) {
-            if (beat % 1 === 0 && Math.random() > 0.3) {
-                const lane = Math.floor(Math.random() * CONFIG.LANE_COUNT);
-                this.queueObstacle(spawnTime, lane, 'normal');
+            const timeUntilPhase2 = CONFIG.PHASE_2_START - spawnTime;
+            if (timeUntilPhase2 > 0) {
+                this.ensureCoverage(spawnTime, Math.min(5, timeUntilPhase2));
+                if (beat % 1 === 0 && Math.random() > 0.3) {
+                    const lane = Math.floor(Math.random() * CONFIG.LANE_COUNT);
+                    if (isSafeToSpawn(spawnTime, lane)) {
+                        this.queueObstacle(spawnTime, lane, 'normal');
+                    }
+                }
             }
         }
 
-        // PHASE 2: NEON (Rhythm Pressure Lanes)
-        // No random spawning. Pattern based on beat count.
+        // --- PHASE 2: NEON WALLS (NO JITTERS) ---
         else if (this.phase === 2) {
             if (beat % 2 === 0) {
-                // Generate a safe lane based on musical measure, not randomness
-                // This creates predictable "dancing" patterns
-                const measure = Math.floor(beat / 4);
-                const patternIdx = beat % 4; // 0, 1, 2, 3
-
-                let safeLane = 2; // Default center
-
-                // Deterministic patterns
-                if (measure % 2 === 0) {
-                    // Staircase
-                    safeLane = patternIdx + 1; // 1, 2, 3, 4 (clamped to 0-4 below)
-                } else {
-                    // ZigZag
-                    safeLane = (patternIdx % 2 === 0) ? 0 : 4;
-                }
-
-                // Clamp safe lane
-                if (safeLane > 4) safeLane = 4;
-
-                // Spawn the "Pressure Wall"
+                const freeCount = (Math.random() < 0.7) ? 1 : 2;
+                const freeLanes = this.pickRandomDistinct(freeCount);
                 for (let i = 0; i < CONFIG.LANE_COUNT; i++) {
-                    if (i !== safeLane) {
+                    if (!freeLanes.includes(i)) {
                         this.queueObstacle(spawnTime, i, 'neon_block');
                     }
                 }
             }
         }
 
-        // PHASE 3: VOID (Music-Shaped Seekers)
-        // Spawns enemies that snap to grid on beat
+        // --- PHASE 3: VOID (UPDATED LOGIC) ---
         else if (this.phase === 3) {
-            // Background rain
-            if (beat % 1 === 0 && Math.random() > 0.5) {
-                const lane = Math.floor(Math.random() * CONFIG.LANE_COUNT);
-                this.queueObstacle(spawnTime, lane, 'normal');
+            // 1. Throttle Check
+            const pendingInWindow = this.getPendingCountInWindow(this.throttleWindow);
+            if (pendingInWindow >= this.maxPerWindow) {
+                if (Math.random() < 0.1) console.log(`[DEBUG] Phase 3 Throttled: ${pendingInWindow} scheduled`);
+                return;
             }
-            // The Seeker
+
+            this.ensureCoverage(spawnTime, 5);
+
+            // Normal Spawns
+            if (beat % 1 === 0 && Math.random() > 0.3) {
+                const lane = Math.floor(Math.random() * CONFIG.LANE_COUNT);
+                if (isSafeToSpawn(spawnTime, lane)) {
+                    this.queueObstacle(spawnTime, lane, 'normal');
+                }
+            }
+
+            // Seeker Spawns (Sensitive)
             if (beat % 8 === 0) {
-                this.queueObstacle(spawnTime, 2, 'seeker'); // Spawn center
+                const seekerLane = 2; // Default start
+                // Rigorous check for Seeker spawn
+                if (isSafeToSpawn(spawnTime, seekerLane)) {
+                    this.queueObstacle(spawnTime, seekerLane, 'seeker');
+                    // Add Reservation
+                    this.laneReservations.push({
+                        lane: seekerLane,
+                        time: spawnTime,
+                        expire: spawnTime + this.reservationDuration
+                    });
+                }
             }
         }
     },
+
 
     queueObstacle(time, val, type) {
-        this.pendingSpawns.push({ time: time, val: val, type: type });
+        // Add to pending spawns
+        this.pendingSpawns.push({
+            time: time,
+            val: val,
+            type: type || 'normal'
+        });
 
-        if (this.isMobile && (type === 'normal' || type === 'neon_block')) {
-            // DETERMINE COLOR BASED ON TYPE
-            const warningColor = (type === 'neon_block') ? CONFIG.COLORS.p2 : CONFIG.COLORS.p1;
+        // Add visual pre-warn for mobile/UX — match color/type
+        const color = (type === 'neon_block' || type === 'overhang') ? CONFIG.COLORS.p2 : CONFIG.COLORS.p1;
 
-            this.preWarns.push({
-                spawnTime: time,
-                lane: val,
-                startTime: time - 0.5,
-                color: warningColor // <--- SAVING THE COLOR HERE
-            });
-        }
+        this.preWarns.push({
+            lane: val,
+            startTime: (AudioEngine && AudioEngine.ctx) ? AudioEngine.ctx.currentTime : performance.now() / 1000,
+            spawnTime: time,
+            type: type,
+            color: color
+        });
+
+        // Keep pending spawns sorted
+        this.pendingSpawns.sort((a, b) => a.time - b.time);
     },
+
 
     // -------------------------------------------------------------
     // LOGIC 2: PHYSICAL SPAWNING (Exact Audio Time)
@@ -395,32 +530,49 @@ const Game = {
     spawnObstacle(val, type) {
         const laneW = this.width / CONFIG.LANE_COUNT;
 
-        if (type === 'normal' || type === 'neon_block') {
-            const lane = val;
-            this.obstacles.push({
-                x: lane * laneW,
-                y: -100,
-                w: laneW,
-                h: type === 'neon_block' ? 60 : 40,
-                type: type,
-                vx: 0,
-                vy: type === 'neon_block' ? 0.9 : 1.0, // Neon falls slightly slower but denser
-                color: type === 'neon_block' ? CONFIG.COLORS.p2 : CONFIG.COLORS.p1
-            });
+        // Default properties (pixel-space)
+        let obs = {
+            lane: val,
+            x: val * laneW,
+            y: -100, // Standard spawn height
+            w: laneW,
+            h: 40,
+            vy: 1.0, // normalized fall-speed multiplier
+            type: type || 'normal',
+            passed: false,
+            color: CONFIG.COLORS.p1
+        };
+
+        // Handle Types
+        if (type === 'neon_block') {
+            obs.color = CONFIG.COLORS.p2; // Neon color
+            obs.h = 60;
+            obs.vy = 0.9;
+        } else if (type === 'overhang') {
+            obs.overhang = true;
+            obs.w = laneW * 0.8;
+            obs.h = 24;
+            obs.x = (val * laneW) + (laneW * 0.1);
+            obs.y = -450;
+            obs.vy = 1.15;
+            obs.color = CONFIG.COLORS.p2;
         }
-        else if (type === 'seeker') {
-            this.obstacles.push({
-                x: (this.width / 2) - (20),
+
+        // Seekers
+        if (type === 'seeker') {
+            obs = Object.assign(obs, {
+                x: (val * laneW) + (laneW / 2) - 20, // Centered in spawned lane
                 y: -100,
                 w: 40,
                 h: 40,
                 type: 'seeker',
-                vx: 0,
                 vy: 0.8,
                 color: CONFIG.COLORS.p3,
-                laneIndex: 2 // Start in middle lane
+                laneIndex: val // Start at spawned lane
             });
         }
+
+        this.obstacles.push(obs);
     },
 
     // -------------------------------------------------------------
@@ -440,23 +592,67 @@ const Game = {
             this.triggerPhaseShift(CONFIG.COLORS.p2, "PHASE 2: NEON");
         }
 
-        // --- PHASE 3 MECHANIC: SEEKER SNAP ---
-        // Iterate through existing seekers and snap them to player lane
-        // They only move laterally ON THE BEAT.
+        // --- PHASE 3 MECHANIC: SMART SEEKER MOVE ---
         if (this.phase === 3) {
             const laneW = this.width / CONFIG.LANE_COUNT;
+            const currentTime = AudioEngine.ctx.currentTime;
 
             this.obstacles.forEach(o => {
                 if (o.type === 'seeker') {
-                    // Determine current player lane index
+                    // 1. Calculate Est. Arrival Time at Player Y
+                    // Distance / Speed. Speed = BASE * PhaseMult(1.3) * vy
+                    const distToPlayer = this.player.y - o.y;
+                    const speedPxPerSec = CONFIG.BASE_SCROLL_SPEED * 1.3 * o.vy;
+                    const timeToImpact = (distToPlayer > 0) ? distToPlayer / speedPxPerSec : 0;
+                    const arrivalTime = currentTime + timeToImpact;
+
+                    // 2. Determine Desired Lane (Towards Player)
                     const playerLane = Math.floor(this.player.x * CONFIG.LANE_COUNT);
+                    let targetLane = o.laneIndex;
+                    if (o.laneIndex < playerLane) targetLane++;
+                    else if (o.laneIndex > playerLane) targetLane--;
 
-                    // Simple AI: Move 1 lane toward player
-                    if (o.laneIndex < playerLane) o.laneIndex++;
-                    else if (o.laneIndex > playerLane) o.laneIndex--;
+                    // 3. Validate Target Lane (Is it safe at arrivalTime?)
+                    // If target lane is blocked, fallback to nearest safe lane
+                    let chosenLane = -1;
 
-                    // Update visual target X (Collision logic uses actual X, so we must interpolate or snap)
-                    // For "Music-Shaped", we snap the target, update calculates position
+                    // Priority 1: Target Lane
+                    if (this.isLaneSafeAtTime(targetLane, arrivalTime)) {
+                        chosenLane = targetLane;
+                    }
+                    // Priority 2: Stay in current Lane
+                    else if (this.isLaneSafeAtTime(o.laneIndex, arrivalTime)) {
+                        chosenLane = o.laneIndex;
+                    }
+                    // Priority 3: Search Radius 1 (Left/Right)
+                    else {
+                        const offsets = [-1, 1, -2, 2];
+                        for (let off of offsets) {
+                            const tryLane = o.laneIndex + off;
+                            if (tryLane >= 0 && tryLane < CONFIG.LANE_COUNT) {
+                                if (this.isLaneSafeAtTime(tryLane, arrivalTime)) {
+                                    chosenLane = tryLane;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    // 4. Apply Move (if valid)
+                    if (chosenLane !== -1) {
+                        o.laneIndex = chosenLane;
+                        // Add temporary reservation for the new lane to prevent other Seekers swarming
+                        this.laneReservations.push({
+                            lane: chosenLane,
+                            time: currentTime,
+                            expire: currentTime + 0.5
+                        });
+                    } else {
+                        // All blocked? Skip move.
+                        if (Math.random() < 0.05) console.log('[DEBUG] Seeker skipped move (Blocked)');
+                    }
+
+                    // 5. Update Visual Target X
                     o.targetX = o.laneIndex * laneW + (laneW / 2) - (o.w / 2);
 
                     // Visual Flair on beat
@@ -500,6 +696,11 @@ const Game = {
 
     update(dt) {
         this.elapsed += dt;
+
+        // --- FIX 1: UPDATE LIVE TIME DISPLAY ---
+        document.getElementById('score').innerText = this.elapsed.toFixed(2);
+        // ---------------------------------------
+
         if (this.invincibleTime > 0) this.invincibleTime -= dt;
 
         // 1. Spawner Queue Processing
@@ -509,6 +710,13 @@ const Game = {
                 const s = this.pendingSpawns[i];
                 this.spawnObstacle(s.val, s.type);
                 this.pendingSpawns.splice(i, 1);
+            }
+        }
+
+        // Cleanup expired lane reservations
+        for (let i = this.laneReservations.length - 1; i >= 0; i--) {
+            if (audioTime >= this.laneReservations[i].expire) {
+                this.laneReservations.splice(i, 1);
             }
         }
 
@@ -524,7 +732,7 @@ const Game = {
         this.player.x = newPixelX / this.width;
         this.player.tilt *= 0.9;
 
-        // 🔥 RESTORE PLAYER TRAIL (VISUAL ONLY)
+        // PLAYER TRAIL (VISUAL ONLY)
         if (Math.random() > 0.5) {
             this.particles.push({
                 x: (this.player.x * this.width) + (this.player.w / 2),
@@ -601,7 +809,7 @@ const Game = {
 
         // 5. Check Life Status
         if (this.lives > 0) {
-            // SURVIVED: Grant temporary invincibility (God mode effect for 2 seconds)
+            // SURVIVED: Grant temporary invincibility
             this.invincibleTime = 2.0;
         } else {
             // DIED: Game Over
@@ -615,6 +823,16 @@ const Game = {
         document.getElementById('hud').classList.add('hidden');
         document.getElementById('game-over-screen').classList.remove('hidden');
         document.getElementById('final-time').innerText = this.elapsed.toFixed(2);
+
+        // --- FIX 2: CALCULATE AND DISPLAY RANK ---
+        const e = this.elapsed;
+        let rank = "F";
+        if (e > 30) rank = "C";
+        if (e > 60) rank = "B";
+        if (e > 90) rank = "A";
+        if (e >= 120) rank = "S";
+        document.getElementById('rank-display').innerText = `RANK: ${rank}`;
+        // -----------------------------------------
     },
 
     triggerGameOver() {
@@ -684,7 +902,8 @@ const Game = {
 
         // Horizontal scrolling floor lines
         const gridSize = 90;
-        const offset = this.gridOffset % gridSize;
+        // const offset = this.gridOffset % gridSize; // gridOffset undefined in source, assuming 0/visual effect handled elsewhere or static
+        const offset = (this.elapsed * 100) % gridSize;
 
         for (let y = -gridSize; y < this.height; y += gridSize) {
             this.ctx.beginPath();
@@ -768,26 +987,27 @@ const Game = {
                 this.ctx.lineTo(o.x, o.y + o.h / 2);
                 this.ctx.fill();
             } else {
+                // Standard Rect
                 this.ctx.fillRect(o.x, o.y, o.w, o.h);
             }
         });
 
         // Particles
         this.particles.forEach(p => {
-            this.ctx.fillStyle = p.color;
             this.ctx.globalAlpha = p.life;
-            this.ctx.fillRect(p.x, p.y, 4, 4);
+            this.ctx.fillStyle = p.color;
+            this.ctx.fillRect(p.x, p.y, 5, 5);
         });
 
-        this.ctx.restore();
-
-        // HUD Update
-        const hudScore = document.getElementById('score');
-        if (hudScore) hudScore.innerText = this.elapsed.toFixed(2);
-        const bar = document.getElementById('progress-fill');
-        if (bar) bar.style.width = Math.min(100, (this.elapsed / CONFIG.TOTAL_DURATION) * 100) + '%';
+        this.ctx.restore(); 
     }
 };
 
-// Initial Start
-Game.init();
+// initialize the game once DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => Game.init());
+} else {
+    
+  Game.init();
+  
+}
