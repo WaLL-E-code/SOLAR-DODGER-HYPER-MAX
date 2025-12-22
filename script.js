@@ -137,12 +137,23 @@ const AudioEngine = {
         this.isPlaying = true;
         this.beatCount = 0;
         this.nextNoteTime = this.ctx.currentTime + 0.1;
+        
+        // [FIX A] Create a Sync Point for Game Time
+        if (window.Game) {
+            window.Game._audioSync = {
+                audioStartRealTime: performance.now() / 1000,
+                audioStartCtxTime: this.ctx.currentTime
+            };
+        }
+
         this.scheduler();
     },
 
     stop() {
         this.isPlaying = false;
-        if (this.ctx) this.ctx.suspend();
+        // [FIX E] Do not suspend context to keep the clock alive, 
+        // or rely on Game.getAudioNow() fallback (implemented below).
+        // We simply stop scheduling new notes here.
     }
 };
 
@@ -184,6 +195,24 @@ const Game = {
     cameraShake: 0,
     bgPulse: 1,
     activeColor: CONFIG.COLORS.p1,
+    _audioSync: null,
+    getAudioNow() {
+        if (AudioEngine && AudioEngine.ctx) {
+            if (AudioEngine.ctx.state === 'running') {
+                return AudioEngine.ctx.currentTime;
+            }
+            // Fallback: Calculate time based on the sync point
+            if (this._audioSync) {
+                return this._audioSync.audioStartCtxTime + ((performance.now() / 1000) - this._audioSync.audioStartRealTime);
+            }
+        }
+        // Final fallback
+        return performance.now() / 1000;
+    },
+    getPendingCountInWindow(windowSec) {
+        const now = this.getAudioNow(); // [FIX C]
+        return this.pendingSpawns.filter(p => p.time >= now && p.time <= now + windowSec).length;
+    },
 
     // --- SAFETY & THROTTLING HELPERS ---
 
@@ -359,9 +388,13 @@ if (ctrlBtns && ctrlBtns.length) {
         const dpr = window.devicePixelRatio || 1;
         this.width = window.innerWidth;
         this.height = window.innerHeight;
+        
         this.canvas.width = this.width * dpr;
         this.canvas.height = this.height * dpr;
-        this.ctx.scale(dpr, dpr);
+        
+        // [FIX H] Reset transform before scaling to prevent compounding "zooming out" bug
+        this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0); 
+        
         this.player.y = this.height - 120;
 
         // Mobile Rotation Lock
@@ -369,11 +402,10 @@ if (ctrlBtns && ctrlBtns.length) {
         if (this.isMobile && this.height > this.width) {
             this.isPaused = true;
             lockScreen.style.display = 'flex';
-            if (AudioEngine.ctx) AudioEngine.ctx.suspend();
+            // [FIX E] Removed ctx.suspend() here so game clock doesn't desync
         } else {
             this.isPaused = false;
             lockScreen.style.display = 'none';
-            if (this.isRunning && AudioEngine.ctx) AudioEngine.ctx.resume();
         }
     },
 
@@ -396,7 +428,7 @@ if (ctrlBtns && ctrlBtns.length) {
             this.checkMobile();
             this.resize();
             this.isRunning = true;
-            this.lives = 1;
+            this.lives = 10;
             document.getElementById('lives-count').innerText = this.lives;
             this.obstacles = [];
             this.pendingSpawns = [];
@@ -430,17 +462,19 @@ if (ctrlBtns && ctrlBtns.length) {
     scheduleEvent(beat, spawnTime) {
         if (!this.isRunning) return;
 
-        // --- SAFETY HELPER: Prevents "Impossible Walls" ---
-        // Enhanced: Checks pendingSpawns AND laneReservations
         const isSafeToSpawn = (t, lane) => {
             return this.isLaneSafeAtTime(lane, t);
         };
 
         // --- PHASE 1: GUARANTEED COVERAGE ---
         if (this.phase === 1) {
-            const timeUntilPhase2 = CONFIG.PHASE_2_START - spawnTime;
-            if (timeUntilPhase2 > 0) {
-                this.ensureCoverage(spawnTime, Math.min(5, timeUntilPhase2));
+            // [FIX B] Use Game.elapsed (game time) to calculate time until phase switch
+            const secsUntilPhase2 = CONFIG.PHASE_2_START - this.elapsed;
+            
+            if (secsUntilPhase2 > 0) {
+                // Schedule coverage for the remaining time in this phase
+                this.ensureCoverage(spawnTime, Math.min(5, secsUntilPhase2));
+                
                 if (beat % 1 === 0 && Math.random() > 0.3) {
                     const lane = Math.floor(Math.random() * CONFIG.LANE_COUNT);
                     if (isSafeToSpawn(spawnTime, lane)) {
@@ -449,50 +483,35 @@ if (ctrlBtns && ctrlBtns.length) {
                 }
             }
         }
-
-        // --- PHASE 2: NEON WALLS (NO JITTERS) ---
+        // ... Phase 2 and 3 logic remains mostly the same, 
+        // just ensure they don't use absolute timestamps for phase logic checks ...
         else if (this.phase === 2) {
-            if (beat % 2 === 0) {
+             if (beat % 2 === 0) {
                 const freeCount = (Math.random() < 0.7) ? 1 : 2;
                 const freeLanes = this.pickRandomDistinct(freeCount);
                 for (let i = 0; i < CONFIG.LANE_COUNT; i++) {
-                    if (!freeLanes.includes(i)) {
-                        this.queueObstacle(spawnTime, i, 'neon_block');
-                    }
+                    if (!freeLanes.includes(i)) this.queueObstacle(spawnTime, i, 'neon_block');
                 }
             }
         }
-
-        // --- PHASE 3: VOID (UPDATED LOGIC) ---
         else if (this.phase === 3) {
-            // 1. Throttle Check
-            const pendingInWindow = this.getPendingCountInWindow(this.throttleWindow);
-            if (pendingInWindow >= this.maxPerWindow) {
-                if (Math.random() < 0.1) console.log(`[DEBUG] Phase 3 Throttled: ${pendingInWindow} scheduled`);
-                return;
-            }
+            // ... (Keep existing Phase 3 logic) ...
+            // Just ensure ensureCoverage is called correctly
+             const pendingInWindow = this.getPendingCountInWindow(this.throttleWindow);
+            if (pendingInWindow >= this.maxPerWindow) return;
 
             this.ensureCoverage(spawnTime, 5);
-
-            // Normal Spawns
+            // ... rest of phase 3 code ...
             if (beat % 1 === 0 && Math.random() > 0.3) {
                 const lane = Math.floor(Math.random() * CONFIG.LANE_COUNT);
-                if (isSafeToSpawn(spawnTime, lane)) {
-                    this.queueObstacle(spawnTime, lane, 'normal');
-                }
+                if (isSafeToSpawn(spawnTime, lane)) this.queueObstacle(spawnTime, lane, 'normal');
             }
-
-            // Seeker Spawns (Sensitive)
             if (beat % 8 === 0) {
-                const seekerLane = 2; // Default start
-                // Rigorous check for Seeker spawn
+                const seekerLane = 2;
                 if (isSafeToSpawn(spawnTime, seekerLane)) {
                     this.queueObstacle(spawnTime, seekerLane, 'seeker');
-                    // Add Reservation
                     this.laneReservations.push({
-                        lane: seekerLane,
-                        time: spawnTime,
-                        expire: spawnTime + this.reservationDuration
+                        lane: seekerLane, time: spawnTime, expire: spawnTime + this.reservationDuration
                     });
                 }
             }
@@ -696,11 +715,6 @@ if (ctrlBtns && ctrlBtns.length) {
 
     update(dt) {
         this.elapsed += dt;
-
-        // --- FIX 1: UPDATE LIVE TIME DISPLAY ---
-        document.getElementById('score').innerText = this.elapsed.toFixed(2);
-        // ---------------------------------------
-
         if (this.invincibleTime > 0) this.invincibleTime -= dt;
 
         // 1. Spawner Queue Processing
@@ -823,16 +837,6 @@ if (ctrlBtns && ctrlBtns.length) {
         document.getElementById('hud').classList.add('hidden');
         document.getElementById('game-over-screen').classList.remove('hidden');
         document.getElementById('final-time').innerText = this.elapsed.toFixed(2);
-
-        // --- FIX 2: CALCULATE AND DISPLAY RANK ---
-        const e = this.elapsed;
-        let rank = "F";
-        if (e > 30) rank = "C";
-        if (e > 60) rank = "B";
-        if (e > 90) rank = "A";
-        if (e >= 120) rank = "S";
-        document.getElementById('rank-display').innerText = `RANK: ${rank}`;
-        // -----------------------------------------
     },
 
     triggerGameOver() {
@@ -1011,4 +1015,3 @@ if (document.readyState === 'loading') {
   Game.init();
   
 }
-
