@@ -1,6 +1,6 @@
 /* * SOLAR DODGER | HYPER-MAX
- * ARCHITECTURE: Audio-First / Rhythm-Synced
- */
+* ARCHITECTURE: Audio-First / Rhythm-Synced
+*/
 
 const CONFIG = {
     BPM: 130,
@@ -137,7 +137,7 @@ const AudioEngine = {
         this.isPlaying = true;
         this.beatCount = 0;
         this.nextNoteTime = this.ctx.currentTime + 0.1;
-        
+
         // [FIX A] Create a Sync Point for Game Time
         if (window.Game) {
             window.Game._audioSync = {
@@ -319,6 +319,11 @@ const Game = {
     init() {
         this.ctx = this.canvas.getContext('2d');
         this.checkMobile();
+        // -> Add inside Game.init(), after this.checkMobile();
+        this.scoreDOM = document.getElementById('score'); // cached DOM ref for TIME display
+        this._scoreUpdateTimer = 0;                        // accumulator for throttled DOM updates
+        this._SCORE_UPDATE_INTERVAL = 0.1;                 // update display every 0.1s (100ms)
+
 
         window.addEventListener('resize', () => { setTimeout(() => this.resize(), 50); });
         window.addEventListener('orientationchange', () => { setTimeout(() => this.resize(), 100); });
@@ -328,7 +333,7 @@ const Game = {
         requestAnimationFrame((t) => this.loop(t));
     },
     setupInputs() {
-        
+
         const handleInput = (dir) => {
             if (!this.isRunning || this.isPaused) return;
             const laneW = 1 / CONFIG.LANE_COUNT;
@@ -357,26 +362,26 @@ const Game = {
 
         // Touch Buttons
         // safe bind helper
-const safeAddEvent = (el, ev, fn, opts) => { if (el) el.addEventListener(ev, fn, opts); };
+        const safeAddEvent = (el, ev, fn, opts) => { if (el) el.addEventListener(ev, fn, opts); };
 
-// ... inside setupInputs()
+        // ... inside setupInputs()
 
-safeAddEvent(document.getElementById('start-btn'), 'click', () => this.start());
-safeAddEvent(document.getElementById('restart-btn'), 'click', () => this.start());
+        safeAddEvent(document.getElementById('start-btn'), 'click', () => this.start());
+        safeAddEvent(document.getElementById('restart-btn'), 'click', () => this.start());
 
-const leftBtn = document.getElementById('touch-left');
-if (leftBtn) leftBtn.addEventListener('touchstart', (e) => { e.preventDefault(); if (this.controlMode === 'buttons') handleInput(-1); }, { passive: false });
+        const leftBtn = document.getElementById('touch-left');
+        if (leftBtn) leftBtn.addEventListener('touchstart', (e) => { e.preventDefault(); if (this.controlMode === 'buttons') handleInput(-1); }, { passive: false });
 
-const rightBtn = document.getElementById('touch-right');
-if (rightBtn) rightBtn.addEventListener('touchstart', (e) => { e.preventDefault(); if (this.controlMode === 'buttons') handleInput(1); }, { passive: false });
+        const rightBtn = document.getElementById('touch-right');
+        if (rightBtn) rightBtn.addEventListener('touchstart', (e) => { e.preventDefault(); if (this.controlMode === 'buttons') handleInput(1); }, { passive: false });
 
-// ctrl-btns (querySelectorAll is safe but check length)
-const ctrlBtns = document.querySelectorAll('.ctrl-btn');
-if (ctrlBtns && ctrlBtns.length) {
-  ctrlBtns.forEach(btn => {
-    btn.addEventListener('click', (e) => this.setControlMode(e.target.dataset.mode));
-  });
-}
+        // ctrl-btns (querySelectorAll is safe but check length)
+        const ctrlBtns = document.querySelectorAll('.ctrl-btn');
+        if (ctrlBtns && ctrlBtns.length) {
+            ctrlBtns.forEach(btn => {
+                btn.addEventListener('click', (e) => this.setControlMode(e.target.dataset.mode));
+            });
+        }
 
     },
 
@@ -388,13 +393,13 @@ if (ctrlBtns && ctrlBtns.length) {
         const dpr = window.devicePixelRatio || 1;
         this.width = window.innerWidth;
         this.height = window.innerHeight;
-        
+
         this.canvas.width = this.width * dpr;
         this.canvas.height = this.height * dpr;
-        
+
         // [FIX H] Reset transform before scaling to prevent compounding "zooming out" bug
-        this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0); 
-        
+        this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
         this.player.y = this.height - 120;
 
         // Mobile Rotation Lock
@@ -436,6 +441,8 @@ if (ctrlBtns && ctrlBtns.length) {
             this.preWarns = [];
             this.particles = [];
             this.elapsed = 0;
+            if (this.scoreDOM) this.scoreDOM.innerText = this.elapsed.toFixed(2);
+            this._scoreUpdateTimer = 0;
             this.phase = 1;
             this.player.x = 0.5;
             this.player.targetX = 0.5;
@@ -470,11 +477,11 @@ if (ctrlBtns && ctrlBtns.length) {
         if (this.phase === 1) {
             // [FIX B] Use Game.elapsed (game time) to calculate time until phase switch
             const secsUntilPhase2 = CONFIG.PHASE_2_START - this.elapsed;
-            
+
             if (secsUntilPhase2 > 0) {
                 // Schedule coverage for the remaining time in this phase
                 this.ensureCoverage(spawnTime, Math.min(5, secsUntilPhase2));
-                
+
                 if (beat % 1 === 0 && Math.random() > 0.3) {
                     const lane = Math.floor(Math.random() * CONFIG.LANE_COUNT);
                     if (isSafeToSpawn(spawnTime, lane)) {
@@ -486,7 +493,7 @@ if (ctrlBtns && ctrlBtns.length) {
         // ... Phase 2 and 3 logic remains mostly the same, 
         // just ensure they don't use absolute timestamps for phase logic checks ...
         else if (this.phase === 2) {
-             if (beat % 2 === 0) {
+            if (beat % 2 === 0) {
                 const freeCount = (Math.random() < 0.7) ? 1 : 2;
                 const freeLanes = this.pickRandomDistinct(freeCount);
                 for (let i = 0; i < CONFIG.LANE_COUNT; i++) {
@@ -497,7 +504,7 @@ if (ctrlBtns && ctrlBtns.length) {
         else if (this.phase === 3) {
             // ... (Keep existing Phase 3 logic) ...
             // Just ensure ensureCoverage is called correctly
-             const pendingInWindow = this.getPendingCountInWindow(this.throttleWindow);
+            const pendingInWindow = this.getPendingCountInWindow(this.throttleWindow);
             if (pendingInWindow >= this.maxPerWindow) return;
 
             this.ensureCoverage(spawnTime, 5);
@@ -715,6 +722,13 @@ if (ctrlBtns && ctrlBtns.length) {
 
     update(dt) {
         this.elapsed += dt;
+        // -> Add in Game.update(dt) (after this.elapsed += dt; or near the end of update)
+        this._scoreUpdateTimer += dt;
+        if (this._scoreUpdateTimer >= this._SCORE_UPDATE_INTERVAL) {
+            this._scoreUpdateTimer = 0;
+            if (this.scoreDOM) this.scoreDOM.innerText = this.elapsed.toFixed(2);
+        }
+
         if (this.invincibleTime > 0) this.invincibleTime -= dt;
 
         // 1. Spawner Queue Processing
@@ -1003,16 +1017,15 @@ if (ctrlBtns && ctrlBtns.length) {
             this.ctx.fillRect(p.x, p.y, 5, 5);
         });
 
-        this.ctx.restore(); 
+        this.ctx.restore();
     }
 };
 
 // initialize the game once DOM is ready
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => Game.init());
+    document.addEventListener('DOMContentLoaded', () => Game.init());
 } else {
-    
-  Game.init();
-  
-}
 
+    Game.init();
+
+}
