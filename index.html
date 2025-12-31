@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#000000">
+
+    <title>SOLAR DODGER | HYPER-MAX</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div id="rotate-message">
+        <div class="warning-content">
+            <h1 class="glitch red" data-text="SYSTEM LOCK">SYSTEM LOCK</h1>
+            <div class="rotate-icon">⟳</div>
+            <p>ROTATE DEVICE TO LANDSCAPE</p>
+        </div>
+    </div>
+
+    <div id="flash-layer"></div>
+
+    <div id="game-container">
+        
+        <canvas id="gameCanvas"></canvas>
+
+        <div id="ui-layer">
+
+            <div id="start-screen" class="screen active">
+                <div class="logo-box">
+                    <h1 class="glitch" data-text="SOLAR">SOLAR</h1>
+                    <h1 class="glitch sub" data-text="DODGER">DODGER</h1>
+                    <div class="version-tag">HYPER-MAX Final Release</div>
+                </div>
+                
+                <div class="panel-box">
+                    <p class="instruction-text">AVOID THE OBSTACLES // SYNC TO THE RHYTHM</p>
+                    <p class="pc-instructions">[ A / D ] or [ ARROWS ] to Strafe</p>
+                </div>
+
+                <div class="settings-grid">
+                    <div class="setting-col mobile-only">
+                        <p class="label">CONTROLS</p>
+                        <div class="toggle-group">
+                            <button class="ctrl-btn mode-swipe selected" data-mode="swipe">SWIPE</button>
+                            <button class="ctrl-btn mode-buttons" data-mode="buttons">TAP</button>
+                        </div>
+                    </div>
+
+                    <div class="setting-col">
+                        <p class="label">AUDIO ENGINE</p>
+                        <div class="toggle-group">
+                            <button class="ctrl-btn audio-mode selected" data-audio="hybrid">HYBRID</button>
+                            <button class="ctrl-btn audio-mode" data-audio="synth">SYNTH</button>
+                        </div>
+                    </div>
+                </div>
+
+                <button id="start-btn" class="mega-btn">INITIALIZE</button>
+            </div>
+
+            <div id="hud" class="hidden">
+                <div class="hud-top">
+                    <div class="hud-module left">
+                        <span class="label">SURVIVAL TIME</span>
+                        <span id="score" class="big-num">0.00</span>
+                    </div>
+
+                    <div class="hud-module center">
+                        <div class="phase-badge">
+                            <span id="phase-text">PHASE 1</span>
+                        </div>
+                        <div id="health-container">
+                            <div id="progress-fill"></div>
+                        </div>
+                    </div>
+
+                    <div class="hud-module right">
+                        <div class="bpm-box">
+                            <span class="label">BPM</span>
+                            <span id="bpm-value">130</span>
+                            <div id="beat-meter"></div>
+                        </div>
+                        <div class="lives-box">
+                            <span class="label">INTEGRITY</span>
+                            <span id="lives-count" class="big-num">1</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="mobile-controls" class="mobile-only hidden">
+                <div id="touch-left" class="touch-zone">
+                    <div class="arrow-shape"></div>
+                </div>
+                <div id="touch-right" class="touch-zone">
+                    <div class="arrow-shape"></div>
+                </div>
+            </div>
+
+            <div id="game-over-screen" class="screen hidden">
+                <h1 class="glitch red" data-text="TERMINATED">TERMINATED</h1>
+                
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <p class="label">TIME ALIVE</p>
+                        <p id="final-time" class="stat-val">0.00</p>
+                    </div>
+                    <div class="stat-item">
+                        <p class="label">PERFORMANCE</p>
+                        <p id="rank-display" class="stat-val">F</p>
+                    </div>
+                </div>
+
+                <div class="setting-col mobile-only compact-settings">
+                    <p class="label">RE-CALIBRATE CONTROLS</p>
+                    <div class="toggle-group">
+                        <button class="ctrl-btn mode-swipe selected" data-mode="swipe">SWIPE</button>
+                        <button class="ctrl-btn mode-buttons" data-mode="buttons">TAP</button>
+                    </div>
+                </div>
+
+                <button id="restart-btn" class="mega-btn">RETRY SYSTEM</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="audio-assets" style="display: none;">
+        <audio id="track-p1" src="audio/phase1_solar_130.mp3" loop preload="auto" crossorigin="anonymous"></audio>
+        <audio id="track-p2" src="audio/phase2_neon_150.mp3" loop preload="auto" crossorigin="anonymous"></audio>
+        <audio id="track-p3" src="audio/phase3_void_180.mp3" loop preload="auto" crossorigin="anonymous"></audio>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
