@@ -1095,3 +1095,4 @@ if (document.readyState === 'loading') {
 } else {
     Game.init();
 }
+
