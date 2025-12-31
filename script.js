@@ -17,7 +17,7 @@ const CONFIG = {
     LANE_COUNT: 5,
     PLAYER_SPEED: 0.18,
     BASE_SCROLL_SPEED: 700,
-    
+
     // Visuals
     COLORS: {
         player: '#ffcc00',
@@ -26,11 +26,11 @@ const CONFIG = {
         p3: '#ff0000',
         white: '#ffffff'
     },
-    
+
     // Audio
     MUSIC_CROSSFADE: 2.0, // Seconds
     DUCK_GAIN: 0.4,       // Gain of synth when music is playing
-    
+
     // Music Start Offsets (Skip intros)
     MUSIC_OFFSETS: {
         p1: 16.0, // Forward by 16s
@@ -46,7 +46,7 @@ const AudioEngine = {
     masterGain: null,
     bgGain: null, // Sub-mix for background music
     synthGain: null, // Sub-mix for generated SFX
-    
+
     // Scheduling
     currentBPM: CONFIG.BPM_P1,
     nextNoteTime: 0,
@@ -54,7 +54,7 @@ const AudioEngine = {
     isPlaying: false,
     lookahead: 25.0,
     scheduleAheadTime: 0.6,
-    
+
     // Music Tracks
     audioMode: 'hybrid', // 'hybrid' (Music+Synth), 'synth' (Synth Only)
     tracks: { p1: null, p2: null, p3: null },
@@ -62,13 +62,13 @@ const AudioEngine = {
     activeGainNode: null,
 
     init() {
-        if (this.ctx) { 
-            if (this.ctx.state === 'suspended') this.ctx.resume(); 
-            return; 
+        if (this.ctx) {
+            if (this.ctx.state === 'suspended') this.ctx.resume();
+            return;
         }
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         this.ctx = new AudioContext();
-        
+
         // Master Chain
         this.masterGain = this.ctx.createGain();
         this.masterGain.gain.value = 0.5;
@@ -77,7 +77,7 @@ const AudioEngine = {
         // Sub-mixes
         this.bgGain = this.ctx.createGain();
         this.bgGain.connect(this.masterGain);
-        
+
         this.synthGain = this.ctx.createGain();
         this.synthGain.connect(this.masterGain);
 
@@ -90,7 +90,7 @@ const AudioEngine = {
         // this logic supports standard HTMLAudioElements if they existed.
         const ids = ['track-p1', 'track-p2', 'track-p3'];
         const phases = ['p1', 'p2', 'p3'];
-        
+
         ids.forEach((id, i) => {
             const el = document.getElementById(id);
             if (el) {
@@ -103,30 +103,30 @@ const AudioEngine = {
 
     setBPM(newBPM) {
         if (this.currentBPM === newBPM) return;
-        
+
         // SAFE BPM TRANSITION
         // 1. Calculate how far we are into the current beat
         const currentTime = this.ctx.currentTime;
         const beatDuration = 60.0 / this.currentBPM;
-        
+
         // If nextNoteTime is far ahead, pull it back to re-align with new BPM
         // strictly speaking, we just update the BPM and the scheduler 
         // uses the new BPM for the *next* increment.
         this.currentBPM = newBPM;
-        
+
         // Update HUD immediately
         const bpmDisplay = document.getElementById('bpm-value');
         if (bpmDisplay) bpmDisplay.innerText = newBPM;
-        
+
         console.log(`[AUDIO] BPM SET TO ${newBPM}`);
     },
 
     crossfadeMusic(phase) {
         if (this.audioMode === 'synth') return; // Synth mode ignores MP3s
-        
+
         const phaseKey = 'p' + phase;
         const trackData = this.tracks[phaseKey];
-        
+
         // If we don't have a file, trigger a synth drone fallback instead?
         // For this demo, we will generate a Synth Drone if no track exists.
         if (!trackData) {
@@ -143,24 +143,24 @@ const AudioEngine = {
             this.activeGainNode.gain.setValueAtTime(this.activeGainNode.gain.value, now);
             this.activeGainNode.gain.linearRampToValueAtTime(0, now + fadeTime);
             const oldSource = this.activeSource;
-            setTimeout(() => { if(oldSource && oldSource.stop) oldSource.stop(); }, fadeTime * 1000);
+            setTimeout(() => { if (oldSource && oldSource.stop) oldSource.stop(); }, fadeTime * 1000);
         }
 
         // 2. Fade in new
         const newGain = this.ctx.createGain();
         newGain.gain.value = 0;
         newGain.connect(this.bgGain);
-        
+
         trackData.source.connect(newGain);
-        
+
         // APPLY OFFSET: Jump to specific start time
         const startOffset = CONFIG.MUSIC_OFFSETS[phaseKey] || 0;
         trackData.element.currentTime = startOffset;
-        
+
         trackData.element.play();
-        
+
         newGain.gain.linearRampToValueAtTime(1.0, now + fadeTime);
-        
+
         this.activeSource = trackData.element; // store ref
         this.activeGainNode = newGain;
     },
@@ -178,11 +178,11 @@ const AudioEngine = {
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
         const filter = this.ctx.createBiquadFilter();
-        
+
         osc.connect(filter);
         filter.connect(gain);
         gain.connect(this.bgGain);
-        
+
         if (phase === 1) {
             osc.type = 'sawtooth';
             osc.frequency.value = 55; // Low A
@@ -206,7 +206,7 @@ const AudioEngine = {
         osc.start(now);
         gain.gain.setValueAtTime(0, now);
         gain.gain.linearRampToValueAtTime(0.3, now + 2);
-        
+
         this.droneOsc = osc;
         this.droneGain = gain;
     },
@@ -245,16 +245,16 @@ const AudioEngine = {
         const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
         const data = buffer.getChannelData(0);
         for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
-        
+
         const noise = this.ctx.createBufferSource();
         noise.buffer = buffer;
         const filter = this.ctx.createBiquadFilter();
         filter.type = 'highpass';
         filter.frequency.value = 5000;
-        
+
         const gain = this.ctx.createGain();
         gain.gain.value = 0.3;
-        
+
         noise.connect(filter);
         filter.connect(gain);
         gain.connect(this.synthGain);
@@ -263,16 +263,16 @@ const AudioEngine = {
 
     scheduler() {
         if (!this.isPlaying) return;
-        
+
         // While there are notes that will need to play before the next interval,
         // schedule them and advance the pointer.
         while (this.nextNoteTime < this.ctx.currentTime + this.scheduleAheadTime) {
             this.scheduleNote(this.beatCount, this.nextNoteTime);
-            
+
             // DYNAMIC BPM ADVANCE
             const secondsPerBeat = 60.0 / this.currentBPM;
             this.nextNoteTime += secondsPerBeat;
-            
+
             this.beatCount++;
         }
         window.setTimeout(() => this.scheduler(), this.lookahead);
@@ -281,11 +281,11 @@ const AudioEngine = {
     scheduleNote(beat, time) {
         // --- MUSIC GENERATION (SYNTH LAYER) ---
         // Even in 'hybrid' mode, we play kicks/hats for game feedback
-        
+
         // Duck synth gain if music is loud? 
         // No, actually we duck the background music on impacts, 
         // but here we keep synth levels constant.
-        
+
         this.playKick(time);
         if (beat % 1 === 0) this.playHiHat(time + (30 / this.currentBPM));
 
@@ -304,8 +304,8 @@ const AudioEngine = {
 
         // Only play melody synth if in Synth mode OR if needed for texture
         if (this.audioMode === 'synth' || this.audioMode === 'hybrid') {
-             if (beat % 2 === 0) this.playTone(freq, 'sawtooth', 0.2, time, 0.3);
-             if (beat % 4 === 2) this.playTone(freq * 1.5, 'square', 0.1, time, 0.2);
+            if (beat % 2 === 0) this.playTone(freq, 'sawtooth', 0.2, time, 0.3);
+            if (beat % 4 === 2) this.playTone(freq * 1.5, 'square', 0.1, time, 0.2);
         }
 
         // --- GAMEPLAY SYNC ---
@@ -325,18 +325,18 @@ const AudioEngine = {
         this.isPlaying = true;
         this.beatCount = 0;
         this.nextNoteTime = this.ctx.currentTime + 0.1;
-        
+
         // Start Initial Drone/Music
         this.crossfadeMusic(1);
-        
+
         this.scheduler();
     },
 
     stop() {
         this.isPlaying = false;
         // Stop drones/music
-        if(this.droneOsc) this.droneOsc.stop();
-        if(this.activeSource && this.activeSource.pause) this.activeSource.pause();
+        if (this.droneOsc) this.droneOsc.stop();
+        if (this.activeSource && this.activeSource.pause) this.activeSource.pause();
         if (this.ctx) this.ctx.suspend();
     },
 
@@ -356,7 +356,7 @@ const AudioEngine = {
 /* --- GAME ENGINE --- */
 const Game = {
     godMode: false,
-    
+
     // SAFETY TUNING
     safetyWindowSec: 0.5,
     reservationDuration: 1.0,
@@ -407,7 +407,7 @@ const Game = {
         // Check if any obstacle is currently "occupying" the lane in a dangerous way
         // We estimate arrival at player y to see if it conflicts
         // This is a rough check for active objects falling right now
-        const activeConflict = this.obstacles.some(o => 
+        const activeConflict = this.obstacles.some(o =>
             !o.passed && o.lane === lane && o.y < this.height - 100
         );
         if (activeConflict) return false;
@@ -513,7 +513,17 @@ const Game = {
         const safeAddEvent = (el, ev, fn, opts) => { if (el) el.addEventListener(ev, fn, opts); };
 
         safeAddEvent(document.getElementById('start-btn'), 'click', () => this.start());
-        safeAddEvent(document.getElementById('restart-btn'), 'click', () => this.start());
+        // Inside the setupInputs() function in script.js
+
+        // [CHANGE THIS]
+        // safeAddEvent(document.getElementById('restart-btn'), 'click', () => this.start());
+
+        // [TO THIS]
+        safeAddEvent(document.getElementById('restart-btn'), 'click', () => {
+            // This forces the entire browser tab to refresh, 
+            // ensuring everything is re-initialized from scratch.
+            window.location.reload();
+        });
 
         const leftBtn = document.getElementById('touch-left');
         if (leftBtn) leftBtn.addEventListener('touchstart', (e) => { e.preventDefault(); if (this.controlMode === 'buttons') handleInput(-1); }, { passive: false });
@@ -524,7 +534,7 @@ const Game = {
         const ctrlBtns = document.querySelectorAll('.ctrl-btn');
         if (ctrlBtns && ctrlBtns.length) {
             ctrlBtns.forEach(btn => {
-                if(!btn.classList.contains('audio-mode')) {
+                if (!btn.classList.contains('audio-mode')) {
                     btn.addEventListener('click', (e) => this.setControlMode(e.target.dataset.mode));
                 }
             });
@@ -560,7 +570,7 @@ const Game = {
     setControlMode(mode) {
         this.controlMode = mode;
         document.querySelectorAll('.ctrl-btn').forEach(btn => {
-            if(!btn.classList.contains('audio-mode')) {
+            if (!btn.classList.contains('audio-mode')) {
                 btn.classList.toggle('selected', btn.dataset.mode === mode);
             }
         });
@@ -593,7 +603,7 @@ const Game = {
             this.checkMobile();
             this.resize();
             this.isRunning = true;
-            this.lives = 3;
+            this.lives = 1;
             document.getElementById('lives-count').innerText = this.lives;
             this.obstacles = [];
             this.pendingSpawns = [];
@@ -602,11 +612,11 @@ const Game = {
             this.particles = [];
             this.elapsed = 0;
             this.phase = 1;
-            
+
             // RESET AUDIO / BPM
             AudioEngine.currentBPM = CONFIG.BPM_P1;
             document.getElementById('bpm-value').innerText = CONFIG.BPM_P1;
-            
+
             this.player.x = 0.5;
             this.player.targetX = 0.5;
             this.invincibleTime = 0;
@@ -618,7 +628,7 @@ const Game = {
             document.getElementById('hud').classList.remove('hidden');
 
             this.setControlMode(this.controlMode);
-            
+
             // Init Visual Phase
             document.body.className = 'phase-1';
             document.getElementById('phase-text').innerText = "PHASE 1: SOLAR";
@@ -681,7 +691,7 @@ const Game = {
         this.pendingSpawns.push({ time: time, val: val, type: type || 'normal' });
 
         const color = (type === 'neon_block' || type === 'overhang') ? CONFIG.COLORS.p2 : CONFIG.COLORS.p1;
-        
+
         // Use AUDIO TIME for pre-warn start reference
         const now = (AudioEngine && AudioEngine.ctx) ? AudioEngine.ctx.currentTime : performance.now() / 1000;
 
@@ -746,9 +756,9 @@ const Game = {
 
         // UI BEAT METER
         const meter = document.getElementById('beat-meter');
-        if(meter) {
+        if (meter) {
             meter.classList.add('pulse');
-            setTimeout(()=> meter.classList.remove('pulse'), 100);
+            setTimeout(() => meter.classList.remove('pulse'), 100);
         }
 
         // --- SEEKER LOGIC (RETAINED FROM PREVIOUS) ---
@@ -808,13 +818,13 @@ const Game = {
         const flash = document.getElementById('flash-layer');
         flash.style.opacity = 0.8;
         setTimeout(() => flash.style.opacity = 0, 300);
-        
+
         document.getElementById('phase-text').innerText = text;
         document.getElementById('phase-text').style.color = color;
-        
+
         // CSS Class Switching
         document.body.className = `phase-${phaseNum}`;
-        
+
         // AUDIO UPDATES
         AudioEngine.setBPM(bpm);
         AudioEngine.crossfadeMusic(phaseNum);
@@ -1026,7 +1036,7 @@ const Game = {
                     this.ctx.globalAlpha = 0.15;
                     this.ctx.fillStyle = w.color;
                     this.ctx.fillRect(w.lane * laneW, 0, laneW, this.height);
-                    
+
                     this.ctx.globalAlpha = 0.4;
                     const y = this.height * 0.2 * Math.min(1, progress);
                     this.ctx.fillRect(w.lane * laneW, y, laneW, this.height);
@@ -1056,7 +1066,7 @@ const Game = {
         this.obstacles.forEach(o => {
             this.ctx.fillStyle = o.color || '#fff';
             this.ctx.shadowColor = o.color;
-            
+
             if (o.type === 'seeker') {
                 this.ctx.beginPath();
                 this.ctx.moveTo(o.x + o.w / 2, o.y);
@@ -1081,7 +1091,7 @@ const Game = {
 };
 
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => Game.init());
+    document.addEventListener('DOMContentLoaded', () => Game.init());
 } else {
-  Game.init();
+    Game.init();
 }
