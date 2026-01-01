@@ -373,7 +373,7 @@ const Game = {
     isPaused: false,
     elapsed: 0,
     phase: 1,
-    controlMode: 'swipe',
+    controlMode: 'buttons',
     isMobile: false,
 
     player: { x: 0.5, targetX: 0.5, w: 30, h: 30, y: 0, tilt: 0 },
@@ -481,6 +481,9 @@ const Game = {
             });
         });
 
+        // NEW: Force UI to match the default 'buttons' mode immediately
+        this.setControlMode(this.controlMode);
+
         requestAnimationFrame((t) => this.loop(t));
     },
 
@@ -559,14 +562,24 @@ const Game = {
 
     setControlMode(mode) {
         this.controlMode = mode;
+        
+        // 1. Update the UI button styling (Highlight selected)
         document.querySelectorAll('.ctrl-btn').forEach(btn => {
             if(!btn.classList.contains('audio-mode')) {
                 btn.classList.toggle('selected', btn.dataset.mode === mode);
             }
         });
+        
+        // 2. Strict Visibility Logic for Mobile Controls
         const mobileCtrls = document.getElementById('mobile-controls');
-        if (this.isRunning && this.isMobile) {
-            mobileCtrls.classList.toggle('hidden', mode !== 'buttons');
+        if (mobileCtrls) {
+            // SHOW only if: Game is Running AND Mode is Buttons AND Device is Mobile
+            if (this.isRunning && mode === 'buttons' && this.isMobile) {
+                mobileCtrls.classList.remove('hidden');
+            } else {
+                // Otherwise (Swipe mode, paused, or desktop) -> HIDE
+                mobileCtrls.classList.add('hidden');
+            }
         }
     },
 
