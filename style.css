@@ -190,7 +190,7 @@ h1.red {
     position: absolute; inset: 0; pointer-events: none;
     display: flex; flex-direction: column; justify-content: space-between;
 }
-#hud.hidden { display: none; }
+#hud.hidden { display: none;}
 
 .hud-top {
     display: flex; justify-content: space-between; align-items: flex-start;
@@ -253,6 +253,12 @@ h1.red {
     display: flex; justify-content: space-between; align-items: flex-end;
     padding: 20px 40px;
 }
+/* Ensure mobile controls actually hide when JS adds .hidden */
+#mobile-controls.hidden { 
+    display: none !important; 
+    pointer-events: none !important;
+}
+
 
 .touch-zone {
     width: 140px; height: 140px;
